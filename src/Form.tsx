@@ -12,7 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {io} from 'socket.io-client';
+import { io } from 'socket.io-client';
 import PushNotification from 'react-native-push-notification';
 
 type cantidadType = {
@@ -33,6 +33,7 @@ type resultadoSumaType = {
   hojas: number;
 };
 type datosPredioType = {
+  _id: string
   enf: string;
   nombrePredio: string;
   tipoFruta: 'Naranja' | 'Limon' | '';
@@ -46,12 +47,23 @@ type historialObjType = {
   fecha: Date;
 };
 
-type responseServerType = {
-  status:number
-  data:datosPredioType
+type inventarioType = {
+  balin: number
+  pareja: number
+  descarteGeneral: number
 }
 
-const socket = io('http://192.168.0.172:3005/');
+type descarteLvadoType = {
+  balin: number
+  pareja: number
+  descarteGeneral: number
+  descompuesta: number
+  piel: number
+  hojas: number
+}
+
+
+const socket = io('http://192.168.0.172:3001/');
 // const socket = io('http://localhost:3005/');
 
 export default function Form() {
@@ -59,7 +71,7 @@ export default function Form() {
 
   useEffect(() => {
     createChannel();
-    socket.on('vaciarLote',(data:datosPredioType):void => {
+    socket.on('vaciarLote', (data: datosPredioType): void => {
       console.log(data);
       PushNotification.localNotification({
         channelId: 'channel-id-1',
@@ -67,19 +79,20 @@ export default function Form() {
         message: 'Se vaceo el predio ' + data.nombrePredio + '--' + data.enf, // (required)
       });
     });
-},[]);
+  }, []);
 
-const createChannel = () => {
-  PushNotification.createChannel(
-    {
-      channelId: 'channel-id-1', // (requerido)
-      channelName: 'Mi canal', // (requerido)
-    },
-    (created) => console.log(`createChannel returned '${created}'`) // (opcional) callback devuelve si el canal fue creado, false significa que ya existía.
-  );
-};
+  const createChannel = () => {
+    PushNotification.createChannel(
+      {
+        channelId: 'channel-id-1', // (requerido)
+        channelName: 'Mi canal', // (requerido)
+      },
+      (created) => console.log(`createChannel returned '${created}'`) // (opcional) callback devuelve si el canal fue creado, false significa que ya existía.
+    );
+  };
 
   const [datosPredio, setDatosPredio] = useState<datosPredioType>({
+    _id: '',
     enf: '',
     tipoFruta: '',
     nombrePredio: '',
@@ -101,6 +114,8 @@ const createChannel = () => {
   const [hojaskilos, setHojaskilos] = useState<string>('');
 
   const [loading, setLoading] = useState<boolean>(false);
+  const [inventario, setInventario] = useState<inventarioType>({balin:0,descarteGeneral:0,pareja:0});
+  const [descarteLavado, setDescarteLavado] = useState<descarteLvadoType>({balin:0,descarteGeneral:0,pareja:0,descompuesta:0,piel:0,hojas:0});
 
 
 
@@ -108,14 +123,48 @@ const createChannel = () => {
   const obtenerLote = async (): Promise<any> => {
     try {
       setLoading(true);
-      const requestENF = {data: {action: 'obtenerLoteVaciandoLavado'}, id: socket.id};
-      socket.emit('descartes', requestENF, (responseServer:responseServerType) => {
-        setDatosPredio({
-          enf: responseServer.data.enf,
-          tipoFruta: responseServer.data.tipoFruta,
-          nombrePredio: responseServer.data.nombrePredio,
+      let id;
+      const requestENF = { data: { collection: 'variablesDescartes', action: 'obtenerEF1Descartes' } };
+      const responseServerPromise: datosPredioType = await new Promise((resolve) => {
+        socket.emit('descartes', requestENF, (responseServer: datosPredioType) => {
+          resolve(responseServer);
         });
       });
+      id = responseServerPromise._id;
+
+      setDatosPredio({
+        _id: responseServerPromise._id,
+        enf: responseServerPromise.enf,
+        tipoFruta: responseServerPromise.tipoFruta,
+        nombrePredio: responseServerPromise.nombrePredio,
+      });
+      const request = {
+        data:{
+          query:{
+            _id: id,
+          },
+          select : { inventarioActual:1, descarteLavado: 1},
+          populate:'',
+          sort:{fechaIngreso: -1},
+        },
+        collection:'lotes',
+        action: 'getLotes',
+        query: 'proceso',
+      };
+       const promises: inventarioType = await new Promise((resolve) => {
+        socket.emit('descartes', {data:request}, (responseInventario:{status:number,data:[{inventarioActual:{descarteLavado:inventarioType}, descarteLavado:descarteLvadoType}]}) => {
+          if (responseInventario && responseInventario.data && responseInventario.data[0] && responseInventario.data[0].inventarioActual) {
+            const descarteLavadoResponse:inventarioType = responseInventario.data[0].inventarioActual.descarteLavado;
+            setDescarteLavado(responseInventario.data[0].descarteLavado);
+            resolve(descarteLavadoResponse);
+          } else {
+            console.log('responseInventario, data, data[0], or inventarioActual is undefined');
+          }
+
+        });
+      });
+      console.log(promises);
+      setInventario(promises);
     } catch (e: any) {
       Alert.alert(`${e.name}: ${e.message}`);
     } finally {
@@ -123,18 +172,37 @@ const createChannel = () => {
     }
   };
 
+
   const guardarDatos = async (): Promise<any> => {
-    if (datosPredio.enf === '')
-      {return Alert.alert('Recargue el predio que se está vaciando');}
+    if (datosPredio.enf === '') { return Alert.alert('Recargue el predio que se está vaciando'); }
     try {
       setLoading(true);
       //await AsyncStorage.removeItem('historial')
       let cantidad: cantidadType = await sumarDatos();
-      cantidad.enf = datosPredio.enf;
-      let descarte = cantidad;
-
-      const requestENF = {data: {action: 'ingresarDescarteLavado', data:descarte}, id: socket.id};
-      socket.emit('descartes', requestENF, (responseServer:responseServerType) => {
+      const new_lote = {
+        _id:datosPredio._id,
+        descarteLavado: {
+          balin: descarteLavado.balin + cantidad.balin,
+          pareja: descarteLavado.pareja + cantidad.pareja,
+          descarteGeneral: descarteLavado.descarteGeneral + cantidad.descarteGeneral,
+          descompuesta: descarteLavado.descompuesta + cantidad.descompuesta,
+          piel: descarteLavado.piel + cantidad.piel,
+          hojas: descarteLavado.hojas + cantidad.hojas,
+        },
+        'inventarioActual.descarteLavado.balin': cantidad.balin + inventario.balin,
+        'inventarioActual.descarteLavado.pareja': cantidad.pareja + inventario.pareja,
+        'inventarioActual.descarteLavado.descarteGeneral': cantidad.descarteGeneral + inventario.descarteGeneral,
+      };
+      const request = {
+        query: 'proceso',
+        collection: 'lotes',
+        action: 'putLotes',
+        record: 'ingresoDescarteLavado',
+        data: {
+          lote: new_lote,
+        },
+      };
+      socket.emit('descartes', {data:request}, (responseServer:{status:number, message:string}) => {
         console.log(responseServer);
       });
 
@@ -146,6 +214,8 @@ const createChannel = () => {
       Alert.alert('Guardado con exito');
     } catch (e: any) {
       Alert.alert(`${e.name}: ${e.message}`);
+      setLoading(false);
+    } finally {
       setLoading(false);
     }
   };
@@ -171,37 +241,36 @@ const createChannel = () => {
         break;
     }
 
-    if (descarteGeneralCanastillas === '') {resultado.descarteGeneral = 0;}
-    else
-      {resultado.descarteGeneral = parseFloat(descarteGeneralCanastillas) * mult;}
+    if (descarteGeneralCanastillas === '') { resultado.descarteGeneral = 0; }
+    else { resultado.descarteGeneral = parseFloat(descarteGeneralCanastillas) * mult; }
 
     if (descarteGeneralKilos === '') {
-    } else {resultado.descarteGeneral += parseFloat(descarteGeneralKilos);}
+    } else { resultado.descarteGeneral += parseFloat(descarteGeneralKilos); }
 
-    if (parejaCanastillas === '') {resultado.pareja = 0;}
-    else {resultado.pareja = parseFloat(parejaCanastillas) * mult;}
+    if (parejaCanastillas === '') { resultado.pareja = 0; }
+    else { resultado.pareja = parseFloat(parejaCanastillas) * mult; }
     if (parejaKilos === '') {
-    } else {resultado.pareja += parseFloat(parejaKilos);}
+    } else { resultado.pareja += parseFloat(parejaKilos); }
 
-    if (balinCanastillas === '') {resultado.balin = 0;}
-    else {resultado.balin = parseFloat(balinCanastillas) * mult;}
+    if (balinCanastillas === '') { resultado.balin = 0; }
+    else { resultado.balin = parseFloat(balinCanastillas) * mult; }
     if (balinKilos === '') {
-    } else {resultado.balin += parseFloat(balinKilos);}
+    } else { resultado.balin += parseFloat(balinKilos); }
 
-    if (descompuestaCanastillas === '') {resultado.descompuesta = 0;}
-    else {resultado.descompuesta = parseFloat(descompuestaCanastillas) * mult;}
+    if (descompuestaCanastillas === '') { resultado.descompuesta = 0; }
+    else { resultado.descompuesta = parseFloat(descompuestaCanastillas) * mult; }
     if (descompuestaKilos === '') {
-    } else {resultado.descompuesta += parseFloat(descompuestaKilos);}
+    } else { resultado.descompuesta += parseFloat(descompuestaKilos); }
 
-    if (pielCanastillas === '') {resultado.piel = 0;}
-    else {resultado.piel = parseFloat(pielCanastillas) * mult;}
+    if (pielCanastillas === '') { resultado.piel = 0; }
+    else { resultado.piel = parseFloat(pielCanastillas) * mult; }
     if (pielKilos === '') {
-    } else {resultado.piel += parseFloat(pielKilos);}
+    } else { resultado.piel += parseFloat(pielKilos); }
 
-    if (hojasCanastillas === '') {resultado.hojas = 0;}
-    else {resultado.hojas = parseFloat(hojasCanastillas) * mult;}
+    if (hojasCanastillas === '') { resultado.hojas = 0; }
+    else { resultado.hojas = parseFloat(hojasCanastillas) * mult; }
     if (hojaskilos === '') {
-    } else {resultado.hojas += parseFloat(hojaskilos);}
+    } else { resultado.hojas += parseFloat(hojaskilos); }
 
     return resultado;
   };
@@ -219,7 +288,7 @@ const createChannel = () => {
     setPielKilos('');
     setHojasCanastillas('');
     setHojaskilos('');
-    setDatosPredio({enf: '', tipoFruta: '', nombrePredio: ''});
+    setDatosPredio({ enf: '', tipoFruta: '', nombrePredio: '', _id: '' });
   };
 
   const guardarHistorial = async (cantidad: cantidadType) => {
@@ -229,7 +298,7 @@ const createChannel = () => {
       let hisotialMem: any = await AsyncStorage.getItem('historial');
       let hisotialMemoria = JSON.parse(hisotialMem);
       console.log(cantidad);
-      if (hisotialMemoria == null) {hisotialMemoria = {data: []};}
+      if (hisotialMemoria == null) { hisotialMemoria = { data: [] }; }
 
       switch (datosPredio.tipoFruta) {
         case 'Naranja':
@@ -241,7 +310,7 @@ const createChannel = () => {
       }
       console.log(hisotialMemoria);
       let historial = Object.keys(cantidad).reduce((acu: number, item) => {
-        if (item !== 'enf') {acu += parseInt((cantidad as any)[item], 10);}
+        if (item !== 'enf') { acu += parseInt((cantidad as any)[item], 10); }
         return acu;
       }, 0);
       let canastillasHist = Math.ceil(historial / mult);
@@ -268,7 +337,7 @@ const createChannel = () => {
     <ScrollView style={{ width: '100%' }}>
       {loading === false ? (
         <View style={styles.container}>
-          <Text style={{fontSize: 20, fontWeight: 'bold'}}>
+          <Text style={{ fontSize: 20, fontWeight: 'bold' }}>
             Descarte Lavado
           </Text>
           <Text>Numero de lote:</Text>
@@ -283,7 +352,7 @@ const createChannel = () => {
             />
           </View>
 
-          <Text style={{marginTop: 10, fontSize: 15, fontWeight: 'bold'}}>
+          <Text style={{ marginTop: 10, fontSize: 15, fontWeight: 'bold' }}>
             Descarte general
           </Text>
           <TextInput
@@ -302,7 +371,7 @@ const createChannel = () => {
 
           />
 
-          <Text style={{marginTop: 5, fontSize: 15, fontWeight: 'bold'}}>
+          <Text style={{ marginTop: 5, fontSize: 15, fontWeight: 'bold' }}>
             Pareja
           </Text>
           <TextInput
@@ -320,7 +389,7 @@ const createChannel = () => {
             onChangeText={setParejaKilos}
           />
 
-          <Text style={{marginTop: 5, fontSize: 15, fontWeight: 'bold'}}>
+          <Text style={{ marginTop: 5, fontSize: 15, fontWeight: 'bold' }}>
             Balin
           </Text>
           <TextInput
@@ -338,7 +407,7 @@ const createChannel = () => {
             onChangeText={setBalinKilos}
           />
 
-          <Text style={{marginTop: 5, fontSize: 15, fontWeight: 'bold'}}>
+          <Text style={{ marginTop: 5, fontSize: 15, fontWeight: 'bold' }}>
             Descompuesta
           </Text>
           <TextInput
@@ -356,7 +425,7 @@ const createChannel = () => {
             onChangeText={setDescompuestaKilos}
           />
 
-          <Text style={{marginTop: 5, fontSize: 15, fontWeight: 'bold'}}>
+          <Text style={{ marginTop: 5, fontSize: 15, fontWeight: 'bold' }}>
             Desprendimiento de piel
           </Text>
           <TextInput
@@ -374,7 +443,7 @@ const createChannel = () => {
             onChangeText={setPielKilos}
           />
 
-          <Text style={{marginTop: 5, fontSize: 15, fontWeight: 'bold'}}>
+          <Text style={{ marginTop: 5, fontSize: 15, fontWeight: 'bold' }}>
             Hojas
           </Text>
           <TextInput
