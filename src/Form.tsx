@@ -47,20 +47,20 @@ type historialObjType = {
   fecha: Date;
 };
 
-type inventarioType = {
-  balin: number
-  pareja: number
-  descarteGeneral: number
-}
+// type inventarioType = {
+//   balin: number
+//   pareja: number
+//   descarteGeneral: number
+// }
 
-type descarteLvadoType = {
-  balin: number
-  pareja: number
-  descarteGeneral: number
-  descompuesta: number
-  piel: number
-  hojas: number
-}
+// type descarteLvadoType = {
+//   balin: number
+//   pareja: number
+//   descarteGeneral: number
+//   descompuesta: number
+//   piel: number
+//   hojas: number
+// }
 
 
 const socket = io('http://192.168.0.172:3001/');
@@ -114,8 +114,8 @@ export default function Form() {
   const [hojaskilos, setHojaskilos] = useState<string>('');
 
   const [loading, setLoading] = useState<boolean>(false);
-  const [inventario, setInventario] = useState<inventarioType>({balin:0,descarteGeneral:0,pareja:0});
-  const [descarteLavado, setDescarteLavado] = useState<descarteLvadoType>({balin:0,descarteGeneral:0,pareja:0,descompuesta:0,piel:0,hojas:0});
+  // const [inventario, setInventario] = useState<inventarioType>({balin:0,descarteGeneral:0,pareja:0});
+  // const [descarteLavado, setDescarteLavado] = useState<descarteLvadoType>({balin:0,descarteGeneral:0,pareja:0,descompuesta:0,piel:0,hojas:0});
 
 
 
@@ -123,14 +123,14 @@ export default function Form() {
   const obtenerLote = async (): Promise<any> => {
     try {
       setLoading(true);
-      let id;
+      // let id;
       const requestENF = { data: { collection: 'variablesDescartes', action: 'obtenerEF1Descartes' } };
       const responseServerPromise: datosPredioType = await new Promise((resolve) => {
         socket.emit('descartes', requestENF, (responseServer: datosPredioType) => {
           resolve(responseServer);
         });
       });
-      id = responseServerPromise._id;
+      // id = responseServerPromise._id;
 
       setDatosPredio({
         _id: responseServerPromise._id,
@@ -138,33 +138,33 @@ export default function Form() {
         tipoFruta: responseServerPromise.tipoFruta,
         nombrePredio: responseServerPromise.nombrePredio,
       });
-      const request = {
-        data:{
-          query:{
-            _id: id,
-          },
-          select : { inventarioActual:1, descarteLavado: 1},
-          populate:'',
-          sort:{fechaIngreso: -1},
-        },
-        collection:'lotes',
-        action: 'getLotes',
-        query: 'proceso',
-      };
-       const promises: inventarioType = await new Promise((resolve) => {
-        socket.emit('descartes', {data:request}, (responseInventario:{status:number,data:[{inventarioActual:{descarteLavado:inventarioType}, descarteLavado:descarteLvadoType}]}) => {
-          if (responseInventario && responseInventario.data && responseInventario.data[0] && responseInventario.data[0].inventarioActual) {
-            const descarteLavadoResponse:inventarioType = responseInventario.data[0].inventarioActual.descarteLavado;
-            setDescarteLavado(responseInventario.data[0].descarteLavado);
-            resolve(descarteLavadoResponse);
-          } else {
-            console.log('responseInventario, data, data[0], or inventarioActual is undefined');
-          }
+      // const request = {
+      //   data:{
+      //     query:{
+      //       _id: id,
+      //     },
+      //     select : { inventarioActual:1, descarteLavado: 1},
+      //     populate:'',
+      //     sort:{fechaIngreso: -1},
+      //   },
+      //   collection:'lotes',
+      //   action: 'getLotes',
+      //   query: 'proceso',
+      // };
+      //  const promises: inventarioType = await new Promise((resolve) => {
+      //   socket.emit('descartes', {data:request}, (responseInventario:{status:number,data:[{inventarioActual:{descarteLavado:inventarioType}, descarteLavado:descarteLvadoType}]}) => {
+      //     if (responseInventario && responseInventario.data && responseInventario.data[0] && responseInventario.data[0].inventarioActual) {
+      //       const descarteLavadoResponse:inventarioType = responseInventario.data[0].inventarioActual.descarteLavado;
+      //       setDescarteLavado(responseInventario.data[0].descarteLavado);
+      //       resolve(descarteLavadoResponse);
+      //     } else {
+      //       console.log('responseInventario, data, data[0], or inventarioActual is undefined');
+      //     }
 
-        });
-      });
-      console.log(promises);
-      setInventario(promises);
+      //   });
+      // });
+      // console.log(promises);
+      // setInventario(promises);
     } catch (e: any) {
       Alert.alert(`${e.name}: ${e.message}`);
     } finally {
@@ -181,17 +181,16 @@ export default function Form() {
       let cantidad: cantidadType = await sumarDatos();
       const new_lote = {
         _id:datosPredio._id,
-        descarteLavado: {
-          balin: descarteLavado.balin + cantidad.balin,
-          pareja: descarteLavado.pareja + cantidad.pareja,
-          descarteGeneral: descarteLavado.descarteGeneral + cantidad.descarteGeneral,
-          descompuesta: descarteLavado.descompuesta + cantidad.descompuesta,
-          piel: descarteLavado.piel + cantidad.piel,
-          hojas: descarteLavado.hojas + cantidad.hojas,
-        },
-        'inventarioActual.descarteLavado.balin': cantidad.balin + inventario.balin,
-        'inventarioActual.descarteLavado.pareja': cantidad.pareja + inventario.pareja,
-        'inventarioActual.descarteLavado.descarteGeneral': cantidad.descarteGeneral + inventario.descarteGeneral,
+        $inc: {'inventarioActual.descarteLavado.balin': cantidad.balin,
+        'inventarioActual.descarteLavado.pareja': cantidad.pareja,
+        'inventarioActual.descarteLavado.descarteGeneral': cantidad.descarteGeneral,
+        'descarteLavado.descarteGeneral': cantidad.descarteGeneral,
+        'descarteLavado.balin': cantidad.balin,
+        'descarteLavado.pareja': cantidad.pareja,
+        'descarteLavado.descompuesta': cantidad.descompuesta,
+        'descarteLavado.piel': cantidad.piel,
+        'descarteLavado.hojas': cantidad.hojas,
+      },
       };
       const request = {
         query: 'proceso',
