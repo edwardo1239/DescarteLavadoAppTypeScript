@@ -47,21 +47,6 @@ type historialObjType = {
   fecha: Date;
 };
 
-// type inventarioType = {
-//   balin: number
-//   pareja: number
-//   descarteGeneral: number
-// }
-
-// type descarteLvadoType = {
-//   balin: number
-//   pareja: number
-//   descarteGeneral: number
-//   descompuesta: number
-//   piel: number
-//   hojas: number
-// }
-
 
 const socket = io('http://192.168.0.172:3001/');
 // const socket = io('http://localhost:3005/');
@@ -112,12 +97,7 @@ export default function Form() {
   const [pielKilos, setPielKilos] = useState<string>('');
   const [hojasCanastillas, setHojasCanastillas] = useState<string>('');
   const [hojaskilos, setHojaskilos] = useState<string>('');
-
   const [loading, setLoading] = useState<boolean>(false);
-  // const [inventario, setInventario] = useState<inventarioType>({balin:0,descarteGeneral:0,pareja:0});
-  // const [descarteLavado, setDescarteLavado] = useState<descarteLvadoType>({balin:0,descarteGeneral:0,pareja:0,descompuesta:0,piel:0,hojas:0});
-
-
 
   //Se obtienen los datos del lote que se esta vaciando, en el caso de que no se tenga el link de la api este se obtiene primero
   const obtenerLote = async (): Promise<any> => {
